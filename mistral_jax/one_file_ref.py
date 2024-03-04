@@ -1,3 +1,4 @@
+import gc
 import jax
 import numpy as np
 import equinox as eqx
@@ -62,8 +63,7 @@ def calculate_rope(x, cos_freq, sin_freq, offset=0):
     return pos_embed.astype(x.dtype)
 
 
-# ### 2. Attention layer
-
+# 2. Attention layer
 class Attention(eqx.Module):
     n_heads: int
     n_kv_heads: int
@@ -137,8 +137,7 @@ class Attention(eqx.Module):
         return output
 
 
-# ### 3. FeedForward
-
+# 3. FeedForward
 class FeedForward(eqx.Module):
     w1: eqx.nn.Linear
     w2: eqx.nn.Linear
@@ -156,8 +155,7 @@ class FeedForward(eqx.Module):
         return self.w2(jax.nn.silu(self.w1(x)) * self.w3(x))
 
 
-# ### 4. TransformerBlock
-
+# 4. TransformerBlock
 class TransformerBlock(eqx.Module):
     dim: int
     n_heads: int
@@ -187,8 +185,7 @@ class TransformerBlock(eqx.Module):
         return out
 
 
-# ### 5. Transformer
-
+# 5. Transformer
 class Transformer(eqx.Module):
     tok_embeddings: eqx.nn.Embedding
     layers: TransformerBlock
@@ -227,8 +224,8 @@ class Transformer(eqx.Module):
         else:
             mask = None
 
-        # # We need to call all the transformer blocks in a loop. Better to use lax.scan
-        # # as it would reduce compilation overhead and will be much faster.
+        # We need to call all the transformer blocks in a loop. Better to use lax.scan
+        # as it would reduce compilation overhead and will be much faster.
         dynamic_tf_layers, static_tf_layers = eqx.partition(self.layers, eqx.is_array)
         
         def f(_x, _dynamic_tf_layers):
@@ -275,25 +272,25 @@ args = ModelArgs(
 precomputed_cos_freq, precomputed_sin_freq = precompute_frequencies(args.head_dim, 128_000)
 
 
-## Example usage:
-max_seq_len = 10
-tok_inp = jnp.asarray(np.random.randint(0, args.vocab_size, size=(args.max_batch_size, max_seq_len)))
-print("Tokenized input shape: ", tok_inp.shape)
-# Get the positions
-positions = jnp.arange(0, max_seq_len)
+# # Example usage:
+# max_seq_len = 10
+# tok_inp = jnp.asarray(np.random.randint(0, args.vocab_size, size=(args.max_batch_size, max_seq_len)))
+# print("Tokenized input shape: ", tok_inp.shape)
+# # Get the positions
+# positions = jnp.arange(0, max_seq_len)
 
-transformer = to_dtype(Transformer(args, key=jax.random.PRNGKey(1)), jnp.bfloat16)
-jitted_transformer = eqx.filter_jit(transformer)
+# transformer = to_dtype(Transformer(args, key=jax.random.PRNGKey(1)), jnp.bfloat16)
+# jitted_transformer = eqx.filter_jit(transformer)
 
-# Run for a single example of shape (seqlen,)
-o = transformer(tok_inp[0], positions)
-o = jitted_transformer(tok_inp[0], positions)
-# output shape: [seqlen, vocab_size]
+# # Run for a single example of shape (seqlen,)
+# o = transformer(tok_inp[0], positions)
+# o = jitted_transformer(tok_inp[0], positions)
+# # output shape: [seqlen, vocab_size]
 
-# Run for the full batch of shape (batch_size, seqlen)
-o = jax.vmap(transformer, in_axes=(0, None))(tok_inp, positions)
-o = jax.vmap(jitted_transformer, in_axes=(0, None))(tok_inp, positions)
-# output shape: [batch _size, seqlen, vocab_size]
+# # Run for the full batch of shape (batch_size, seqlen)
+# o = jax.vmap(transformer, in_axes=(0, None))(tok_inp, positions)
+# o = jax.vmap(jitted_transformer, in_axes=(0, None))(tok_inp, positions)
+# # output shape: [batch _size, seqlen, vocab_size]
 
 
 
