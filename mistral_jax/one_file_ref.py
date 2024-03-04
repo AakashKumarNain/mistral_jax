@@ -108,11 +108,6 @@ class Attention(eqx.Module):
             # prefill
             key = jnp.repeat(xk, self.kv_repeats, axis=1)
             value = jnp.repeat(xv, self.kv_repeats, axis=1)
-            print("After prefilling")
-            print("key shape: ", key.shape, key.dtype)
-            print("value shape: ", value.shape, value.dtype)
-            print("="*75, "\n")
-        
         # TODO: else fill from cache
 
         query = jnp.transpose(xq, (1, 0, 2)) # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
