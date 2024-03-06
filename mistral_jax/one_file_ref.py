@@ -1,6 +1,5 @@
 import gc
 import jax
-import numpy as np
 import equinox as eqx
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -9,15 +8,18 @@ from collections import namedtuple
 
 # Utility to convert dtypes
 def to_dtype(model, dtype):
-     def _to_dtype(leaf):
-        if isinstance(leaf, jax.Array):  # not eqx.is_array, which also detects NumPy arrays
+    def _to_dtype(leaf):
+        if isinstance(
+            leaf, jax.Array
+        ):  # not eqx.is_array, which also detects NumPy arrays
             leaf_with_dtype = leaf.astype(dtype)
             del leaf
             gc.collect()  # just in case?
             return leaf_with_dtype
         else:
             return leaf
-     return jtu.tree_map(_to_dtype, model)
+
+    return jtu.tree_map(_to_dtype, model)
 
 
 def count_jax_parameters(model):
@@ -75,20 +77,28 @@ class Attention(eqx.Module):
     wk: eqx.nn.Linear
     wv: eqx.nn.Linear
     wo: eqx.nn.Linear
-    
-    def __init__(self, args:namedtuple, key:jax.Array):
+
+    def __init__(self, args: namedtuple, key: jax.Array):
         self.n_heads = args.n_heads
         self.n_kv_heads = args.n_kv_heads
         self.kv_repeats = self.n_heads // self.n_kv_heads
         self.sliding_window = args.sliding_window
-        self.scale = args.head_dim **-0.5
+        self.scale = args.head_dim**-0.5
         self.head_dim = args.head_dim
 
         key1, key2, key3, key4 = jax.random.split(key, 4)
-        self.wq = eqx.nn.Linear(args.dim, args.n_heads * args.head_dim, use_bias=False, key=key1)
-        self.wk = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key2)
-        self.wv = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim,use_bias=False, key=key3)
-        self.wo = eqx.nn.Linear(args.n_heads * args.head_dim, args.dim, use_bias=False, key=key4)
+        self.wq = eqx.nn.Linear(
+            args.dim, args.n_heads * args.head_dim, use_bias=False, key=key1
+        )
+        self.wk = eqx.nn.Linear(
+            args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key2
+        )
+        self.wv = eqx.nn.Linear(
+            args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key3
+        )
+        self.wo = eqx.nn.Linear(
+            args.n_heads * args.head_dim, args.dim, use_bias=False, key=key4
+        )
 
     def __call__(self, x, cos_freq, sin_freq, positions, mask):
         seqlen = x.shape[0]
@@ -110,9 +120,15 @@ class Attention(eqx.Module):
             value = jnp.repeat(xv, self.kv_repeats, axis=1)
         # TODO: else fill from cache
 
-        query = jnp.transpose(xq, (1, 0, 2)) # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
-        key = jnp.transpose(key, (1, 0, 2)) # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
-        value = jnp.transpose(value, (1, 0, 2)) # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
+        query = jnp.transpose(
+            xq, (1, 0, 2)
+        )  # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
+        key = jnp.transpose(
+            key, (1, 0, 2)
+        )  # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
+        value = jnp.transpose(
+            value, (1, 0, 2)
+        )  # [seqlen, num_heads, head_dim] -> [num_heads, seqlen, head_dim]
 
         # scores : [n_heads, seqlen | 1, seqlen]
         scores = jnp.matmul(query, jnp.transpose(key, (0, 2, 1))) * self.scale
@@ -165,13 +181,19 @@ class TransformerBlock(eqx.Module):
         self.dim = args.dim
 
         self.attention = Attention(args, key=key1)
-        self.attention_norm = eqx.nn.RMSNorm(args.dim, eps=args.norm_eps, use_bias=False, use_weight=True)
+        self.attention_norm = eqx.nn.RMSNorm(
+            args.dim, eps=args.norm_eps, use_bias=False, use_weight=True
+        )
 
         self.feed_forward = FeedForward(args, key=key2)
-        self.ffn_norm = eqx.nn.RMSNorm(args.dim, eps=args.norm_eps, use_bias=False, use_weight=True)
+        self.ffn_norm = eqx.nn.RMSNorm(
+            args.dim, eps=args.norm_eps, use_bias=False, use_weight=True
+        )
 
     def __call__(self, x, cos_freq, sin_freq, positions, mask):
-        normed_x = jax.vmap(self.attention_norm)(x.astype(jnp.float32)).astype(jnp.float16)
+        normed_x = jax.vmap(self.attention_norm)(x.astype(jnp.float32)).astype(
+            jnp.float16
+        )
         r = self.attention(normed_x, cos_freq, sin_freq, positions, mask)
         h1 = x + r
         h2 = jax.vmap(self.ffn_norm)(h1.astype(jnp.float32)).astype(jnp.float16)
@@ -188,16 +210,20 @@ class Transformer(eqx.Module):
     output: eqx.nn.Linear
     vocab_size: int
     n_layers: int
-    
+
     def __init__(self, args, key):
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
         keys = jax.random.split(key, args.n_layers + 2)
         embed_key, linear_key, tf_layers_keys = keys[0], keys[-1], keys[1:-1]
-        
+
         self.tok_embeddings = eqx.nn.Embedding(args.vocab_size, args.dim, key=embed_key)
-        self.norm = eqx.nn.RMSNorm(args.dim, eps=args.norm_eps, use_bias=False, use_weight=True)
-        self.output = eqx.nn.Linear(args.dim, args.vocab_size, use_bias=False, key=linear_key)
+        self.norm = eqx.nn.RMSNorm(
+            args.dim, eps=args.norm_eps, use_bias=False, use_weight=True
+        )
+        self.output = eqx.nn.Linear(
+            args.dim, args.vocab_size, use_bias=False, key=linear_key
+        )
 
         make_tf_layers = lambda k: TransformerBlock(args, key=k)
         self.layers = eqx.filter_vmap(make_tf_layers)(tf_layers_keys)
@@ -206,11 +232,11 @@ class Transformer(eqx.Module):
         # x is of shape (seqlen, ). We need to use vmap
         # as the embedding layer expects single token (scalar)
         # as input.
-        h = jax.vmap(self.tok_embeddings)(x) # output shape: [seqlen, embed_size]
+        h = jax.vmap(self.tok_embeddings)(x)  # output shape: [seqlen, embed_size]
         sin_freq = precomputed_sin_freq[positions]
         cos_freq = precomputed_cos_freq[positions]
-        
-        if x.shape[-1] > 1: 
+
+        if x.shape[-1] > 1:
             seq_len = x.shape[-1]
             t = jnp.full((seq_len, seq_len), dtype=h.dtype, fill_value=1)
             mask = jnp.tril(t, k=0)
@@ -222,7 +248,7 @@ class Transformer(eqx.Module):
         # We need to call all the transformer blocks in a loop. Better to use lax.scan
         # as it would reduce compilation overhead and will be much faster.
         dynamic_tf_layers, static_tf_layers = eqx.partition(self.layers, eqx.is_array)
-        
+
         def f(_x, _dynamic_tf_layers):
             tf_layer = eqx.combine(_dynamic_tf_layers, static_tf_layers)
             return tf_layer(_x, cos_freq, sin_freq, positions, mask), None
@@ -246,8 +272,8 @@ ModelArgs = namedtuple(
         "sliding_window",
         "norm_eps",
         "vocab_size",
-        "max_batch_size"
-    ]
+        "max_batch_size",
+    ],
 )
 
 args = ModelArgs(
@@ -260,11 +286,13 @@ args = ModelArgs(
     vocab_size=32000,
     max_batch_size=1,
     sliding_window=4096,
-    norm_eps=1e-5
+    norm_eps=1e-5,
 )
 
 # Precomputed frequencies
-precomputed_cos_freq, precomputed_sin_freq = precompute_frequencies(args.head_dim, 128_000)
+precomputed_cos_freq, precomputed_sin_freq = precompute_frequencies(
+    args.head_dim, 128_000
+)
 
 
 # # Example usage:
@@ -286,7 +314,3 @@ precomputed_cos_freq, precomputed_sin_freq = precompute_frequencies(args.head_di
 # o = jax.vmap(transformer, in_axes=(0, None))(tok_inp, positions)
 # o = jax.vmap(jitted_transformer, in_axes=(0, None))(tok_inp, positions)
 # # output shape: [batch _size, seqlen, vocab_size]
-
-
-
-
