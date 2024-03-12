@@ -37,7 +37,7 @@ def precompute_frequencies(dim, max_pos, theta=10000.0):
 
 
 def calculate_rope(x, cos_freq, sin_freq, offset=0):
-    # x shape  is [seqlen, num_heads, head_dim]
+    # x shape  is [seqlen, head_dim, num_heads]
 
     # Get the sequence length
     seqlen = x.shape[0]
