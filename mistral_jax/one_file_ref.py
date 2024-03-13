@@ -141,9 +141,10 @@ class Attention(eqx.Module):
             scores = scores + mask
 
         scores = jax.nn.softmax(scores.astype(jnp.float32), axis=-1).astype(query.dtype)
+
         output = jnp.matmul(scores, value)
-        output = jnp.transpose(output, (0, 2, 1))
-        output = jnp.reshape(output, (output.shape[-1], -1))
+        output = jnp.reshape(jnp.transpose(output, (1, 0, 2)), (seqlen, -1))
+
         output = jax.vmap(self.wo)(output)
         return output
 
