@@ -140,7 +140,7 @@ class Attention(eqx.Module):
             mask = mask[jnp.newaxis, ...]
             scores = scores + mask
 
-        scores = jax.nn.softmax(scores.astype(jnp.float32)).astype(query.dtype)
+        scores = jax.nn.softmax(scores.astype(jnp.float32), axis=-1).astype(query.dtype)
         output = jnp.matmul(scores, value)
         output = jnp.transpose(output, (0, 2, 1))
         output = jnp.reshape(output, (output.shape[-1], -1))
