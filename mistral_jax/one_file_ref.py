@@ -192,9 +192,7 @@ class TransformerBlock(eqx.Module):
         )
 
     def __call__(self, x, cos_freq, sin_freq, positions, mask):
-        normed_x = jax.vmap(self.attention_norm)(x.astype(jnp.float32)).astype(
-            jnp.float16
-        )
+        normed_x = jax.vmap(self.attention_norm)(x.astype(jnp.float32)).astype(x.dtype)
         r = self.attention(normed_x, cos_freq, sin_freq, positions, mask)
         h1 = x + r
         h2 = jax.vmap(self.ffn_norm)(h1.astype(jnp.float32)).astype(jnp.float16)
