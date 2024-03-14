@@ -254,7 +254,7 @@ class Transformer(eqx.Module):
 
         h, _ = jax.lax.scan(f, h, dynamic_tf_layers)
         h = jax.vmap(self.norm)(h)
-        h = jax.vmap(self.output)(h)
+        h = jax.vmap(self.output)(h).astype(jnp.float32)
         # TODO: Calculate logits in this block
         return h
 
