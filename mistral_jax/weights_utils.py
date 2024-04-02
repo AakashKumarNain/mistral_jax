@@ -19,7 +19,7 @@ def load_weights(torch_weights, path, leaf):
     )
 
     Returns:
-        Pytree with the desired values
+        Pytree with the desired weight values
     """
 
     path_pieces = []
