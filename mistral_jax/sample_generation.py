@@ -1,4 +1,6 @@
+import json
 import numpy as np
+from pathlib import Path
 from typing import NamedTuple
 from functools import partial
 
@@ -10,11 +12,25 @@ import torch
 import equinox as eqx
 
 from rope import precompute_frequencies
+from mistral_model import Transformer
 from tokenizer import MistralTokenizer
-
+from weights_utils import port_weights_from_torch
 
 # Set device to CPU for torch
 device  = torch.device("cpu")
+
+
+class ModelArgs(NamedTuple):
+    dim: int
+    n_layers: int
+    n_heads: int
+    n_kv_heads: int
+    head_dim: int
+    hidden_dim: int
+    vocab_size: int
+    sliding_window: int
+    norm_eps: float
+    max_batch_size: int = 1
 
 
 def load_torch_state_dict(model_weight_path):
@@ -100,3 +116,68 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
     res = prompts[0] + " " + "".join(tokenizer.decode(generated))
     print(res, "\n")
     return res
+
+
+def main(model_files_path="../model_files/"):
+
+    # Path containing all original model files related to Mitsral-7B
+    model_files_path = Path(model_files_path)
+
+    # 1. Load torch state dict
+    state_dict = load_torch_state_dict(model_files_path / "consolidated.00.pth")
+
+    # 2. Load arguments required for building the model
+    with open(model_files_path / "params.json", "r") as f:
+        args = ModelArgs(**json.loads(f.read()))
+
+    # 3. Build equinox mistral-7b model
+    model = Transformer(args, key=jax.random.PRNGKey(1), dtype=jnp.bfloat16)
+
+    # 4. Port weights from torch to equinox model
+    model = port_weights_from_torch(state_dict, model)
+
+    # 5. Precomputed frequencies
+    cos_freq, sin_freq = precompute_frequencies(args.head_dim, 128000)
+
+    # 6. Define KV-cache
+    cache_k = jnp.zeros(
+        (
+            args.max_batch_size,
+            args.n_layers,
+            args.sliding_window,
+            args.n_kv_heads,
+            args.head_dim
+        ),
+        dtype=jnp.bfloat16
+    )
+    cache_v = jnp.zeros(
+        (
+            args.max_batch_size,
+            args.n_layers,
+            args.sliding_window,
+            args.n_kv_heads,
+            args.head_dim
+        ), 
+        dtype=jnp.bfloat16
+    )
+
+    
+    # The attention layers expect five inputs one of which is the mask.
+    # This mask is generated inside the `Transformer` module, and then passed
+    # to other blocks. So, there is no need to include the `mask` argument
+    # when calling the `Transformer` module. But. we want to `vmap` the entire
+    # model in a sophisticated manner, so we will include a fake mask (`None`)
+    # in the `__call__` argument of our `Transformer` module.
+    # The semantics of the vmap are defined as:
+    # (in_axes=(0, None, None, None, None, 0, 0)) where:
+    #   0: Batch axis for the tokenized inputs
+    #   None: No batch axis for the cosine frequencies
+    #   None: No batch axis for the sine frequencies
+    #   None: No batch axis for the positions
+    #   None: No batch axis for the mask
+    #   0: Batch axis for the key cache
+    #   0: Batch axis for the value cache
+
+    # 7. Define the vmapped version of the model.
+    vmapped_model = jax.vmap(model, in_axes=(0, None, None, None, None, 0, 0))
+
