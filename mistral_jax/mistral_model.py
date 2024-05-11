@@ -187,3 +187,72 @@ class TransformerBlock(eqx.Module):
         r = jax.vmap(self.feed_forward)(jax.vmap(self.ffn_norm)(h))
         out = h +r
         return out, cache_k, cache_v
+    
+
+class Transformer(eqx.Module):
+    tok_embeddings: eqx.nn.Embedding
+    layers: TransformerBlock
+    norm: RMSNorm
+    output: eqx.nn.Linear
+    vocab_size: int
+    n_layers: int
+    sliding_window: int
+
+    def __init__(self, args, key, dtype=jnp.bfloat16):
+        self.vocab_size = args.vocab_size
+        self.n_layers = args.n_layers
+        self.sliding_window = args.sliding_window
+        keys = jax.random.split(key, args.n_layers + 2)
+        embed_key, linear_key, tf_layers_keys = keys[0], keys[1], keys[2:]
+
+        self.tok_embeddings = eqx.nn.Embedding(args.vocab_size, args.dim, key=embed_key, dtype=dtype)
+        self.norm = RMSNorm(dim=args.dim, eps=args.norm_eps, dtype=dtype)
+        self.output = eqx.nn.Linear(args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype)
+        self.layers = [TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype) for i in range(args.n_layers)] 
+
+    @eqx.filter_jit
+    def compute_embeddings(self, x):
+        return jax.vmap(self.tok_embeddings)(x)
+
+    @eqx.filter_jit
+    def compute_mask(self, seqlen):
+        t = jnp.full((seqlen, seqlen), dtype=jnp.bfloat16, fill_value=1)
+        mask = jnp.tril(t, k=0)
+        # make the mask banded to account for sliding window
+        mask = jnp.triu(mask, k=-self.sliding_window)
+        mask = jnp.log(mask)
+        return mask
+
+    @eqx.filter_jit
+    def compute_norm(self, x):
+        return jax.vmap(self.norm)(x)
+
+
+    @eqx.filter_jit
+    def compute_output(self, x):
+        return jax.vmap(self.output)(x)
+
+    @partial(jax.jit, static_argnums=(1,))
+    def update_cache_values(self, idx, cache_k, cache_v, cache_k_updates, cache_v_updates):
+        cache_k = cache_k.at[idx, :, :, :].set(cache_k_updates)
+        cache_v = cache_v.at[idx, :, :, :].set(cache_v_updates)
+        return cache_k, cache_v
+        
+
+    def __call__(self, x, cos_freq, sin_freq, positions, mask, cache_k, cache_v):
+        # x is of shape (seqlen, )
+        h = self.compute_embeddings(x)
+        
+        if x.shape[-1] > 1:
+            seqlen = x.shape[-1]
+            mask = self.compute_mask(seqlen)
+        else:
+            mask = None
+
+        for i, layer in enumerate(self.layers):
+            h, cache_ki, cache_vi = layer(h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...])
+            cache_k, cache_v = self.update_cache_values(i, cache_k, cache_v, cache_ki, cache_vi)
+        
+        h = self.compute_norm(h)
+        h = self.compute_output(h).astype(jnp.float32)
+        return h, cache_k, cache_v
