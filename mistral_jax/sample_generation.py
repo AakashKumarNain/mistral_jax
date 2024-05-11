@@ -119,7 +119,6 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
 
 
 def main(model_files_path="../model_files/"):
-
     # Path containing all original model files related to Mitsral-7B
     model_files_path = Path(model_files_path)
 
@@ -132,9 +131,11 @@ def main(model_files_path="../model_files/"):
 
     # 3. Build equinox mistral-7b model
     model = Transformer(args, key=jax.random.PRNGKey(1), dtype=jnp.bfloat16)
-
     # 4. Port weights from torch to equinox model
     model = port_weights_from_torch(state_dict, model)
+
+    # 5. Load the tokenizer
+    tokenizer = MistralTokenizer(model_files_path / "tokenizer.model")
 
     # 5. Precomputed frequencies
     cos_freq, sin_freq = precompute_frequencies(args.head_dim, 128000)
@@ -161,7 +162,6 @@ def main(model_files_path="../model_files/"):
         dtype=jnp.bfloat16
     )
 
-    
     # The attention layers expect five inputs one of which is the mask.
     # This mask is generated inside the `Transformer` module, and then passed
     # to other blocks. So, there is no need to include the `mask` argument
@@ -180,4 +180,24 @@ def main(model_files_path="../model_files/"):
 
     # 7. Define the vmapped version of the model.
     vmapped_model = jax.vmap(model, in_axes=(0, None, None, None, None, 0, 0))
+
+    # **NOTE:** The first call will be very slow as the model will be compiled
+    # If you want to avoid that delay, please warm up your model with some fake inputs.
+    
+    # 8. Generate
+    res = generate(
+        vmapped_model,
+        tokenizer,
+        cos_freq=cos_freq,
+        sin_freq=sin_freq,
+        cache_k=cache_k,
+        cache_v=cache_v,
+        max_tokens=20
+    )
+
+
+
+if __name__ == '__main__':
+    model_files_path = Path("../model_files/")
+    main(model_files_path)
 
