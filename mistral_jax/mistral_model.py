@@ -159,3 +159,31 @@ class Attention(eqx.Module):
         # 5. Output
         output = self.compute_scores_and_output(xq, key, value, mask, seqlen)
         return output, cache_k, cache_v
+    
+
+class TransformerBlock(eqx.Module):
+    dim: int
+    n_heads: int
+    attention: Attention
+    attention_norm: RMSNorm
+    feed_forward: FeedForward
+    ffn_norm: RMSNorm
+
+    def __init__(self, args, key, dtype=jnp.bfloat16):
+        key1, key2 = jax.random.split(key, 2)
+        self.n_heads = args.n_heads
+        self.dim = args.dim
+
+        self.attention = Attention(args, key=key1, dtype=dtype)
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, dtype=dtype)
+
+        self.feed_forward = FeedForward(args, key=key2, dtype=dtype)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, dtype=dtype)
+
+    def __call__(self, x, cos_freq, sin_freq, positions, mask, cache_k, cache_v):
+        normed_x = jax.vmap(self.attention_norm)(x)
+        r, cache_k, cache_v = self.attention(normed_x, cos_freq, sin_freq, positions, mask, cache_k, cache_v)
+        h = x + r
+        r = jax.vmap(self.feed_forward)(jax.vmap(self.ffn_norm)(h))
+        out = h +r
+        return out, cache_k, cache_v
