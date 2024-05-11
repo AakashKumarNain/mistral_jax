@@ -1,5 +1,4 @@
 import jax
-import numpy as np
 import jax.numpy as jnp
 
 
@@ -25,9 +24,9 @@ def port_weights_from_torch(torch_weights, eqx_model):
         path_pieces = []
         for path_elem in path:
             if isinstance(path_elem, jax.tree_util.GetAttrKey):
-                 path_pieces.append(path_elem.name)
+                path_pieces.append(path_elem.name)
             elif isinstance(path_elem, jax.tree_util.SequenceKey):
-                 path_pieces.append(str(path_elem.idx))
+                path_pieces.append(str(path_elem.idx))
             else:
                 raise ValueError(f"Unsupported path type {type(path_elem)}")
 

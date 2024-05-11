@@ -1,7 +1,5 @@
 import jax
-import numpy as np
 import jax.numpy as jnp
-import jax.tree_util as jtu
 
 import equinox as eqx
 from functools import partial
@@ -9,14 +7,13 @@ from equinox._misc import default_floating_dtype
 from jaxtyping import Array, Float
 
 from rope import calculate_rope
-from rope import precompute_frequencies
 
 
 # We are not using `eqx.RMSNorm` because there is a bug
 # in the calculation. Will send a PR for that separately!
 class RMSNorm(eqx.Module):
     eps: float
-    weight: Float[Array, "*shape"]
+    weight: Float[Array, "*shape"]  # noqa: F821
 
     def __init__(self, dim, eps, dtype=jnp.bfloat16):
         dtype = default_floating_dtype if dtype is None else dtype
@@ -24,12 +21,12 @@ class RMSNorm(eqx.Module):
         self.weight = jnp.ones(shape=dim, dtype=dtype)
 
     def _norm(self, x):
-        return x * jax.lax.rsqrt(jnp.mean(x **2 , keepdims=True) + self.eps)
+        return x * jax.lax.rsqrt(jnp.mean(x**2, keepdims=True) + self.eps)
 
     def __call__(self, x):
         output = self._norm(x.astype(jnp.float32)).astype(x.dtype)
         return output * self.weight
-    
+
 
 class FeedForward(eqx.Module):
     w1: eqx.nn.Linear
@@ -40,14 +37,20 @@ class FeedForward(eqx.Module):
         dtype = default_floating_dtype if dtype is None else dtype
         key1, key2, key3 = jax.random.split(key, 3)
 
-        self.w1 = eqx.nn.Linear(args.dim, args.hidden_dim, use_bias=False, key=key1, dtype=dtype)
-        self.w2 = eqx.nn.Linear(args.hidden_dim, args.dim, use_bias=False, key=key2, dtype=dtype)
-        self.w3 = eqx.nn.Linear(args.dim, args.hidden_dim, use_bias=False, key=key3, dtype=dtype)
+        self.w1 = eqx.nn.Linear(
+            args.dim, args.hidden_dim, use_bias=False, key=key1, dtype=dtype
+        )
+        self.w2 = eqx.nn.Linear(
+            args.hidden_dim, args.dim, use_bias=False, key=key2, dtype=dtype
+        )
+        self.w3 = eqx.nn.Linear(
+            args.dim, args.hidden_dim, use_bias=False, key=key3, dtype=dtype
+        )
 
     def __call__(self, x):
         h = jax.nn.silu(self.w1(x).astype(jnp.float32)).astype(x.dtype)
         return self.w2(h * self.w3(x))
-    
+
 
 class Attention(eqx.Module):
     dim: int
@@ -75,10 +78,34 @@ class Attention(eqx.Module):
 
         self.scale = args.head_dim**-0.5
 
-        self.wq = eqx.nn.Linear(args.dim, args.n_heads * args.head_dim, use_bias=False, key=key1, dtype=dtype)
-        self.wk = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key2, dtype=dtype)
-        self.wv = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key3, dtype=dtype)
-        self.wo = eqx.nn.Linear(args.n_heads * args.head_dim, args.dim, use_bias=False, key=key4, dtype=dtype)
+        self.wq = eqx.nn.Linear(
+            args.dim,
+            args.n_heads * args.head_dim,
+            use_bias=False,
+            key=key1,
+            dtype=dtype,
+        )
+        self.wk = eqx.nn.Linear(
+            args.dim,
+            args.n_kv_heads * args.head_dim,
+            use_bias=False,
+            key=key2,
+            dtype=dtype,
+        )
+        self.wv = eqx.nn.Linear(
+            args.dim,
+            args.n_kv_heads * args.head_dim,
+            use_bias=False,
+            key=key3,
+            dtype=dtype,
+        )
+        self.wo = eqx.nn.Linear(
+            args.n_heads * args.head_dim,
+            args.dim,
+            use_bias=False,
+            key=key4,
+            dtype=dtype,
+        )
 
     @partial(jax.jit, static_argnums=(2, 3))
     def get_cache_slice(self, x, pos, kv_repeats):
@@ -89,7 +116,7 @@ class Attention(eqx.Module):
     @eqx.filter_jit
     def compute_qkv(self, x):
         seqlen, _ = x.shape
-        
+
         xq = jax.vmap(self.wq)(x)
         xk = jax.vmap(self.wk)(x)
         xv = jax.vmap(self.wv)(x)
@@ -133,7 +160,9 @@ class Attention(eqx.Module):
         output = jax.vmap(self.wo)(output)
         return output
 
-    def __call__(self,  x, cos_freq, sin_freq, positions, mask=None, cache_k=None, cache_v=None):
+    def __call__(
+        self, x, cos_freq, sin_freq, positions, mask=None, cache_k=None, cache_v=None
+    ):
         # x shape: [seqlen, embed_dim]
         seqlen, _ = x.shape
         # 1. Calculate qkv
@@ -159,7 +188,7 @@ class Attention(eqx.Module):
         # 5. Output
         output = self.compute_scores_and_output(xq, key, value, mask, seqlen)
         return output, cache_k, cache_v
-    
+
 
 class TransformerBlock(eqx.Module):
     dim: int
@@ -182,12 +211,14 @@ class TransformerBlock(eqx.Module):
 
     def __call__(self, x, cos_freq, sin_freq, positions, mask, cache_k, cache_v):
         normed_x = jax.vmap(self.attention_norm)(x)
-        r, cache_k, cache_v = self.attention(normed_x, cos_freq, sin_freq, positions, mask, cache_k, cache_v)
+        r, cache_k, cache_v = self.attention(
+            normed_x, cos_freq, sin_freq, positions, mask, cache_k, cache_v
+        )
         h = x + r
         r = jax.vmap(self.feed_forward)(jax.vmap(self.ffn_norm)(h))
-        out = h +r
+        out = h + r
         return out, cache_k, cache_v
-    
+
 
 class Transformer(eqx.Module):
     tok_embeddings: eqx.nn.Embedding
@@ -205,10 +236,17 @@ class Transformer(eqx.Module):
         keys = jax.random.split(key, args.n_layers + 2)
         embed_key, linear_key, tf_layers_keys = keys[0], keys[1], keys[2:]
 
-        self.tok_embeddings = eqx.nn.Embedding(args.vocab_size, args.dim, key=embed_key, dtype=dtype)
+        self.tok_embeddings = eqx.nn.Embedding(
+            args.vocab_size, args.dim, key=embed_key, dtype=dtype
+        )
         self.norm = RMSNorm(dim=args.dim, eps=args.norm_eps, dtype=dtype)
-        self.output = eqx.nn.Linear(args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype)
-        self.layers = [TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype) for i in range(args.n_layers)] 
+        self.output = eqx.nn.Linear(
+            args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype
+        )
+        self.layers = [
+            TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype)
+            for i in range(args.n_layers)
+        ]
 
     @eqx.filter_jit
     def compute_embeddings(self, x):
@@ -227,22 +265,22 @@ class Transformer(eqx.Module):
     def compute_norm(self, x):
         return jax.vmap(self.norm)(x)
 
-
     @eqx.filter_jit
     def compute_output(self, x):
         return jax.vmap(self.output)(x)
 
     @partial(jax.jit, static_argnums=(1,))
-    def update_cache_values(self, idx, cache_k, cache_v, cache_k_updates, cache_v_updates):
+    def update_cache_values(
+        self, idx, cache_k, cache_v, cache_k_updates, cache_v_updates
+    ):
         cache_k = cache_k.at[idx, :, :, :].set(cache_k_updates)
         cache_v = cache_v.at[idx, :, :, :].set(cache_v_updates)
         return cache_k, cache_v
-        
 
     def __call__(self, x, cos_freq, sin_freq, positions, mask, cache_k, cache_v):
         # x is of shape (seqlen, )
         h = self.compute_embeddings(x)
-        
+
         if x.shape[-1] > 1:
             seqlen = x.shape[-1]
             mask = self.compute_mask(seqlen)
@@ -250,9 +288,13 @@ class Transformer(eqx.Module):
             mask = None
 
         for i, layer in enumerate(self.layers):
-            h, cache_ki, cache_vi = layer(h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...])
-            cache_k, cache_v = self.update_cache_values(i, cache_k, cache_v, cache_ki, cache_vi)
-        
+            h, cache_ki, cache_vi = layer(
+                h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...]
+            )
+            cache_k, cache_v = self.update_cache_values(
+                i, cache_k, cache_v, cache_ki, cache_vi
+            )
+
         h = self.compute_norm(h)
         h = self.compute_output(h).astype(jnp.float32)
         return h, cache_k, cache_v
