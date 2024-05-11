@@ -2,14 +2,10 @@ import json
 import numpy as np
 from pathlib import Path
 from typing import NamedTuple
-from functools import partial
 
 import jax
-import jax.numpy as jnp
-import jax.tree_util as jtu
-
 import torch
-import equinox as eqx
+import jax.numpy as jnp
 
 from rope import precompute_frequencies
 from mistral_model import Transformer
@@ -17,7 +13,7 @@ from tokenizer import MistralTokenizer
 from weights_utils import port_weights_from_torch
 
 # Set device to CPU for torch
-device  = torch.device("cpu")
+device = torch.device("cpu")
 
 
 class ModelArgs(NamedTuple):
@@ -59,7 +55,7 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
         cache_k: The key cache of shape `(bs, n_layers, seqlen, n_kv_heads, head_dim)`
         cache_v: The value cache of shape `(bs, n_layers, seqlen, num_kv_heads, head_dim)`
         max_tokens: Number of output tokens to generate
-    
+
     Returns:
         String containing the original prompt with decoded generated tokens.
     """
@@ -73,12 +69,14 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
 
     # 2. Using numpy to generate the desired input. Will replace it with something
     # better later on
-    input_tokens = np.full((len(prompts), max_prompt_len), tokenizer.pad_id, dtype=np.int32)
+    input_tokens = np.full(
+        (len(prompts), max_prompt_len), tokenizer.pad_id, dtype=np.int32
+    )
     for i, encoded in enumerate(encoded_prompts):
-        input_tokens[i, :len(encoded)] = jnp.array((encoded))
+        input_tokens[i, : len(encoded)] = jnp.array((encoded))
     input_mask = input_tokens != tokenizer.pad_id
     cur_pos = min_prompt_len
-    
+
     # 3. pre-fill
     positions = jnp.arange(0, min_prompt_len)
     logits, cache_k, cache_v = model(
@@ -88,17 +86,17 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
         positions,
         None,
         cache_k,
-        cache_v
+        cache_v,
     )
     logprobs = jax.nn.log_softmax(logits, axis=-1)
-    next_token = jnp.argmax(logprobs[:, -1,:], axis=-1)
+    next_token = jnp.argmax(logprobs[:, -1, :], axis=-1)
 
     # 4. Generation
     generated = [next_token[0].item()]
     print("Generating...")
 
     for _ in range(max_tokens):
-        cur_pos+=1
+        cur_pos += 1
         pos = jnp.array([cur_pos])
         logits, cache_k, cache_v = logits, cache_k, cache_v = model(
             jnp.asarray(next_token[:, None]),
@@ -107,10 +105,10 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
             pos,
             None,
             cache_k,
-            cache_v
+            cache_v,
         )
         logprobs = jax.nn.log_softmax(logits, axis=-1)
-        next_token = jnp.argmax(logprobs[:, -1,:], axis=-1)
+        next_token = jnp.argmax(logprobs[:, -1, :], axis=-1)
         generated.append(next_token[0].item())
 
     res = prompts[0] + " " + "".join(tokenizer.decode(generated))
@@ -147,9 +145,9 @@ def main(model_files_path="../model_files/"):
             args.n_layers,
             args.sliding_window,
             args.n_kv_heads,
-            args.head_dim
+            args.head_dim,
         ),
-        dtype=jnp.bfloat16
+        dtype=jnp.bfloat16,
     )
     cache_v = jnp.zeros(
         (
@@ -157,9 +155,9 @@ def main(model_files_path="../model_files/"):
             args.n_layers,
             args.sliding_window,
             args.n_kv_heads,
-            args.head_dim
-        ), 
-        dtype=jnp.bfloat16
+            args.head_dim,
+        ),
+        dtype=jnp.bfloat16,
     )
 
     # The attention layers expect five inputs one of which is the mask.
@@ -183,7 +181,7 @@ def main(model_files_path="../model_files/"):
 
     # **NOTE:** The first call will be very slow as the model will be compiled
     # If you want to avoid that delay, please warm up your model with some fake inputs.
-    
+
     # 8. Generate
     res = generate(
         vmapped_model,
@@ -192,12 +190,11 @@ def main(model_files_path="../model_files/"):
         sin_freq=sin_freq,
         cache_k=cache_k,
         cache_v=cache_v,
-        max_tokens=20
+        max_tokens=20,
     )
+    return res
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     model_files_path = Path("../model_files/")
-    main(model_files_path)
-
+    _ = main(model_files_path)
