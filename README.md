@@ -5,6 +5,21 @@ This repository contains a port of the original [Mistral-7B model](https://githu
 Any official restriction, if applicable, that comes with the original code and the model, applies here as well. Please check the original license and the [repo](https://github.com/mistralai/mistral-src/tree/main?tab=readme-ov-file) for the details.
 
 
+# Instructions to run the model
+
+1. Clone the repo
+2. Install the required packages `pip install -r requirements.txt`
+3. Copy the mistral weights and other downloaded files to `mistral_jax/model_files/` directory
+4. Run `python -m sample_generation.py` to generate
+
+
+
+# Results
+Here is a screenshot of the results I got on my side
+
+![](./sample_results.png)
+
+
 ## References
 
 [1] [Mistral 7B- Official code implementation](https://github.com/mistralai/mistral-src/tree/main?tab=readme-ov-file)
