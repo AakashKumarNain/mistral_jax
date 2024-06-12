@@ -9,7 +9,8 @@ import equinox as eqx
 import jax.numpy as jnp
 
 from rope import precompute_frequencies
-from mistral_model import Transformer
+# from mistral_model import Transformer
+from mistral_model_optimized import Transformer
 from tokenizer import MistralTokenizer
 from weights_utils import port_weights_from_torch
 
