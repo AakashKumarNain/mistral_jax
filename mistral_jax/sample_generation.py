@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 import jax
 import torch
+import equinox as eqx
 import jax.numpy as jnp
 
 from rope import precompute_frequencies
@@ -44,7 +45,7 @@ def load_torch_state_dict(model_weight_path):
     return state_dict
 
 
-def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=36):
+def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, args, max_tokens=36):
     """Generate `max_tokens` given a prompt.
 
     Args:
@@ -79,11 +80,12 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, max_tokens=
 
     # 3. pre-fill
     positions = jnp.arange(0, min_prompt_len)
+    positions_padded = jnp.pad(positions, (0, args.sliding_window - len(positions)), constant_values=args.sliding_window+2)
     logits, cache_k, cache_v = model(
         jnp.asarray(input_tokens[:, :min_prompt_len]),
         cos_freq[positions],
         sin_freq[positions],
-        positions,
+        positions_padded,
         None,
         cache_k,
         cache_v,
@@ -177,7 +179,7 @@ def main(model_files_path="../model_files/"):
     #   0: Batch axis for the value cache
 
     # 7. Define the vmapped version of the model.
-    vmapped_model = jax.vmap(model, in_axes=(0, None, None, None, None, 0, 0))
+    vmapped_model = eqx.filter_vmap(eqx.filter_jit(model), in_axes=(0, None, None, None, None, 0, 0))
 
     # **NOTE:** The first call will be very slow as the model will be compiled
     # If you want to avoid that delay, please warm up your model with some fake inputs.
@@ -190,6 +192,7 @@ def main(model_files_path="../model_files/"):
         sin_freq=sin_freq,
         cache_k=cache_k,
         cache_v=cache_v,
+        args=args,
         max_tokens=20,
     )
     return res
