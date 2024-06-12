@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 
 import equinox as eqx
-from functools import partial
 from equinox._misc import default_floating_dtype
 from jaxtyping import Array, Float
 
@@ -78,10 +77,34 @@ class Attention(eqx.Module):
 
         self.scale = args.head_dim**-0.5
 
-        self.wq = eqx.nn.Linear(args.dim, args.n_heads * args.head_dim, use_bias=False, key=key1, dtype=dtype)
-        self.wk = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key2, dtype=dtype)
-        self.wv = eqx.nn.Linear(args.dim, args.n_kv_heads * args.head_dim, use_bias=False, key=key3, dtype=dtype)
-        self.wo = eqx.nn.Linear(args.n_heads * args.head_dim, args.dim, use_bias=False, key=key4, dtype=dtype)
+        self.wq = eqx.nn.Linear(
+            args.dim,
+            args.n_heads * args.head_dim,
+            use_bias=False,
+            key=key1,
+            dtype=dtype,
+        )
+        self.wk = eqx.nn.Linear(
+            args.dim,
+            args.n_kv_heads * args.head_dim,
+            use_bias=False,
+            key=key2,
+            dtype=dtype,
+        )
+        self.wv = eqx.nn.Linear(
+            args.dim,
+            args.n_kv_heads * args.head_dim,
+            use_bias=False,
+            key=key3,
+            dtype=dtype,
+        )
+        self.wo = eqx.nn.Linear(
+            args.n_heads * args.head_dim,
+            args.dim,
+            use_bias=False,
+            key=key4,
+            dtype=dtype,
+        )
 
     def compute_scores_and_output(self, xq, key, value, mask, seqlen, pos_mask):
         query = jnp.transpose(xq, (1, 0, 2))
@@ -106,10 +129,12 @@ class Attention(eqx.Module):
         output = jax.vmap(self.wo)(output)
         return output
 
-    def __call__(self,  x, cos_freq, sin_freq, positions, mask=None, cache_k=None, cache_v=None):
+    def __call__(
+        self, x, cos_freq, sin_freq, positions, mask=None, cache_k=None, cache_v=None
+    ):
         # x shape: [seqlen, embed_dim]
         seqlen = x.shape[0]
-        
+
         xq = jax.vmap(self.wq)(x)
         xk = jax.vmap(self.wk)(x)
         xv = jax.vmap(self.wv)(x)
@@ -130,11 +155,13 @@ class Attention(eqx.Module):
             output = self.compute_scores_and_output(xq, key, value, mask, seqlen, None)
         else:
             # single-token generation
-            one_hot_indices = jax.nn.one_hot(positions, self.sliding_window, dtype=cache_k.dtype).reshape(self.sliding_window, 1, 1)
+            one_hot_indices = jax.nn.one_hot(
+                positions, self.sliding_window, dtype=cache_k.dtype
+            ).reshape(self.sliding_window, 1, 1)
             # the `where` update is only necessary if you are calling the cache
             # multiple times with the same prompt. Ideally, we expect that you
             # flush out the cache with the new prompt, and start over. What does
-            # this do? It ensures that we are not adding any values updated earlier 
+            # this do? It ensures that we are not adding any values updated earlier
             # with the new updates, meaning we are always replacing the value not
             # updating it.For example, if prompt had a length of 6, and you want
             # to generate 7th token, this ensures that we are not adding the old
@@ -150,12 +177,25 @@ class Attention(eqx.Module):
             v_updates = cache_v + xv * one_hot_indices
             cache_k = jnp.where(cache_k, cache_k, k_updates)
             cache_v = jnp.where(cache_v, cache_v, v_updates)
-        
+
             cur_pos = positions[-1] + 1
-            causal_mask = jnp.broadcast_to(jnp.arange(self.sliding_window) >= cur_pos,(1, 1, self.sliding_window)).reshape(self.sliding_window,1,1)
-            key = jnp.repeat(jnp.where(causal_mask, 0, cache_k), axis=1, repeats=self.kv_repeats)
-            value = jnp.repeat(jnp.where(causal_mask, 0, cache_v), axis=1, repeats=self.kv_repeats)
-            output = self.compute_scores_and_output(xq, key, value, mask, seqlen, causal_mask.reshape((1, 1, self.sliding_window)))
+            causal_mask = jnp.broadcast_to(
+                jnp.arange(self.sliding_window) >= cur_pos, (1, 1, self.sliding_window)
+            ).reshape(self.sliding_window, 1, 1)
+            key = jnp.repeat(
+                jnp.where(causal_mask, 0, cache_k), axis=1, repeats=self.kv_repeats
+            )
+            value = jnp.repeat(
+                jnp.where(causal_mask, 0, cache_v), axis=1, repeats=self.kv_repeats
+            )
+            output = self.compute_scores_and_output(
+                xq,
+                key,
+                value,
+                mask,
+                seqlen,
+                causal_mask.reshape((1, 1, self.sliding_window)),
+            )
 
         return output, cache_k, cache_v
 
@@ -206,10 +246,17 @@ class Transformer(eqx.Module):
         keys = jax.random.split(key, args.n_layers + 2)
         embed_key, linear_key, tf_layers_keys = keys[0], keys[1], keys[2:]
 
-        self.tok_embeddings = eqx.nn.Embedding(args.vocab_size, args.dim, key=embed_key, dtype=dtype)
+        self.tok_embeddings = eqx.nn.Embedding(
+            args.vocab_size, args.dim, key=embed_key, dtype=dtype
+        )
         self.norm = RMSNorm(dim=args.dim, eps=args.norm_eps, dtype=dtype)
-        self.output = eqx.nn.Linear(args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype)
-        self.layers = [TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype) for i in range(args.n_layers)] 
+        self.output = eqx.nn.Linear(
+            args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype
+        )
+        self.layers = [
+            TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype)
+            for i in range(args.n_layers)
+        ]
 
     def compute_mask(self, seqlen):
         t = jnp.full((seqlen, seqlen), dtype=jnp.bfloat16, fill_value=1)
@@ -221,7 +268,7 @@ class Transformer(eqx.Module):
     def __call__(self, x, cos_freq, sin_freq, positions, mask, cache_k, cache_v):
         # x is of shape (seqlen, )
         h = jax.vmap(self.tok_embeddings)(x)
-        
+
         if x.shape[-1] > 1:
             seqlen = x.shape[-1]
             mask = self.compute_mask(seqlen)
@@ -229,10 +276,12 @@ class Transformer(eqx.Module):
             mask = None
 
         for i, layer in enumerate(self.layers):
-            h, cache_ki, cache_vi = layer(h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...])
+            h, cache_ki, cache_vi = layer(
+                h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...]
+            )
             cache_k = cache_k.at[i, :, :, :].set(cache_ki)
             cache_v = cache_v.at[i, :, :, :].set(cache_vi)
-        
+
         h = jax.vmap(self.norm)(h)
         h = jax.vmap(self.output)(h).astype(jnp.float32)
         return h, cache_k, cache_v
