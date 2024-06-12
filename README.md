@@ -13,7 +13,6 @@ Any official restriction, if applicable, that comes with the original code and t
 4. Run `python -m sample_generation.py` to generate
 
 
-
 # Results
 Here is a screenshot of the results I got on my side
 
