@@ -14,7 +14,7 @@ Any official restriction, if applicable, that comes with the original code and t
 
 
 # Results
-Here is a screenshot of the results I got on my side
+Here is a screenshot of the results I got on my side on a single A100 machine:
 
 ![](./sample_results.png)
 
