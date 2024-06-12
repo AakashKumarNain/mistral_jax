@@ -9,6 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 
 from rope import precompute_frequencies
+
 # from mistral_model import Transformer
 from mistral_model_optimized import Transformer
 from tokenizer import MistralTokenizer
@@ -46,7 +47,9 @@ def load_torch_state_dict(model_weight_path):
     return state_dict
 
 
-def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, args, max_tokens=36):
+def generate(
+    model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, args, max_tokens=36
+):
     """Generate `max_tokens` given a prompt.
 
     Args:
@@ -76,12 +79,16 @@ def generate(model, tokenizer, cos_freq, sin_freq, cache_k, cache_v, args, max_t
     )
     for i, encoded in enumerate(encoded_prompts):
         input_tokens[i, : len(encoded)] = jnp.array((encoded))
-    input_mask = input_tokens != tokenizer.pad_id
+    # input_mask = input_tokens != tokenizer.pad_id
     cur_pos = min_prompt_len
 
     # 3. pre-fill
     positions = jnp.arange(0, min_prompt_len)
-    positions_padded = jnp.pad(positions, (0, args.sliding_window - len(positions)), constant_values=args.sliding_window+2)
+    positions_padded = jnp.pad(
+        positions,
+        (0, args.sliding_window - len(positions)),
+        constant_values=args.sliding_window + 2,
+    )
     logits, cache_k, cache_v = model(
         jnp.asarray(input_tokens[:, :min_prompt_len]),
         cos_freq[positions],
@@ -180,7 +187,9 @@ def main(model_files_path="../model_files/"):
     #   0: Batch axis for the value cache
 
     # 7. Define the vmapped version of the model.
-    vmapped_model = eqx.filter_vmap(eqx.filter_jit(model), in_axes=(0, None, None, None, None, 0, 0))
+    vmapped_model = eqx.filter_vmap(
+        eqx.filter_jit(model), in_axes=(0, None, None, None, None, 0, 0)
+    )
 
     # **NOTE:** The first call will be very slow as the model will be compiled
     # If you want to avoid that delay, please warm up your model with some fake inputs.
