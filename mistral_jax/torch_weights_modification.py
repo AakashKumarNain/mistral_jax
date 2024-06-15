@@ -59,5 +59,17 @@ for name, pattern in prefix_patt_pairs:
     if len(new_weights) != 0:
         new_state_dict[name] = torch.stack(new_weights)
 
+
+# For all the attention layers within the transformer block, we
+# can do one more optimization. Instead of having three different
+# weights `wq`, `wk`, `wv`, we can have one linear layer with the
+# merged dimensions, and then split the output of this linear layer
+# in the forward pass. Let us do that.
+wq = new_state_dict.pop("layers.attention.wq.weight")
+wk = new_state_dict.pop("layers.attention.wk.weight")
+wv = new_state_dict.pop("layers.attention.wv.weight")
+new_state_dict["layers.attention.wqkv.weight"] = torch.cat([wq, wk, wv], dim=1)
+
+
 # Save the new weights dict
 torch.save(new_state_dict, "../model_files/merged_state_dict_mistral7B.pth")
