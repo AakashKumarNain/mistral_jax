@@ -166,7 +166,7 @@ class Attention(eqx.Module):
             # updating it.For example, if prompt had a length of 6, and you want
             # to generate 7th token, this ensures that we are not adding the old
             # value of 7th token to the updated value as it would lead to wrong
-            # results. In case, you are flusing the caceh after every prompt,
+            # results. In case, you are flushing the cache after every prompt,
             # remove the `jnp.where()` condition and pass the updates directly
             # to cache_k, and cache_v respectively i.e.
             #
