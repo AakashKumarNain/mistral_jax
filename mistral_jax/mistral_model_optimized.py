@@ -253,10 +253,9 @@ class Transformer(eqx.Module):
         self.output = eqx.nn.Linear(
             args.dim, args.vocab_size, use_bias=False, key=linear_key, dtype=dtype
         )
-        self.layers = [
-            TransformerBlock(args, key=tf_layers_keys[i], dtype=dtype)
-            for i in range(args.n_layers)
-        ]
+        make_layers = lambda k: TransformerBlock(args, key=k, dtype=dtype)
+        self.layers = eqx.filter_vmap(make_layers)(tf_layers_keys)
+        del make_layers
 
     def compute_mask(self, seqlen):
         t = jnp.full((seqlen, seqlen), dtype=jnp.bfloat16, fill_value=1)
@@ -275,12 +274,27 @@ class Transformer(eqx.Module):
         else:
             mask = None
 
-        for i, layer in enumerate(self.layers):
+        # Partition the TransformerLayers into static and dynamic parts
+        dynamic_layers, static_layers = eqx.partition(self.layers, eqx.is_array)
+        
+        def f(_x, _dynamic_l):
+            layer = eqx.combine(_dynamic_l, static_layers)
+            h, cache_k, cache_v, i = _x
             h, cache_ki, cache_vi = layer(
-                h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...]
+                h,
+                cos_freq,
+                sin_freq,
+                positions,
+                mask,
+                cache_k[i, ...],
+                cache_v[i, ...]
             )
             cache_k = cache_k.at[i, :, :, :].set(cache_ki)
             cache_v = cache_v.at[i, :, :, :].set(cache_vi)
+            return (h, cache_k, cache_v, i+1), None
+
+        i = 0
+        (h, cache_k, cache_v, i), _ = jax.lax.scan(f, (h, cache_k, cache_v, i), dynamic_layers)
 
         h = jax.vmap(self.norm)(h)
         h = jax.vmap(self.output)(h).astype(jnp.float32)
