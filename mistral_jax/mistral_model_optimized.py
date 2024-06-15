@@ -265,17 +265,23 @@ class Transformer(eqx.Module):
 
         def f(_x, _dynamic_l):
             layer = eqx.combine(_dynamic_l, static_layers)
-            h, cache_k, cache_v, i = _x
+            h, cache_k, cache_v, layer_idx = _x
             h, cache_ki, cache_vi = layer(
-                h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...]
+                h,
+                cos_freq,
+                sin_freq,
+                positions,
+                mask,
+                cache_k[layer_idx, ...],
+                cache_v[layer_idx, ...],
             )
-            cache_k = cache_k.at[i, :, :, :].set(cache_ki)
-            cache_v = cache_v.at[i, :, :, :].set(cache_vi)
-            return (h, cache_k, cache_v, i + 1), None
+            cache_k = cache_k.at[layer_idx, :, :, :].set(cache_ki)
+            cache_v = cache_v.at[layer_idx, :, :, :].set(cache_vi)
+            return (h, cache_k, cache_v, layer_idx + 1), None
 
-        i = 0
-        (h, cache_k, cache_v, i), _ = jax.lax.scan(
-            f, (h, cache_k, cache_v, i), dynamic_layers
+        layer_idx = 0
+        (h, cache_k, cache_v, layer_idx), _ = jax.lax.scan(
+            f, (h, cache_k, cache_v, layer_idx), dynamic_layers
         )
 
         h = jax.vmap(self.norm)(h)
