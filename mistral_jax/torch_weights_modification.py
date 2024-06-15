@@ -16,8 +16,6 @@ Please go through the detailed instructions provided in the README for the same.
 
 import re
 import torch
-import pickle
-from collections import defaultdict
 
 
 # Set the device to CPU.
