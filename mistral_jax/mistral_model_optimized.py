@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import equinox as eqx
 from equinox._misc import default_floating_dtype
 from jaxtyping import Array, Float
+from typing import Tuple
 
 from rope import calculate_rope
 
@@ -15,7 +16,7 @@ class RMSNorm(eqx.Module):
     weight: Float[Array, "*shape"]  # noqa: F821
 
     def __init__(self, dim, eps, dtype=jnp.bfloat16):
-        dtype = default_floating_dtype if dtype is None else dtype
+        dtype = default_floating_dtype() if dtype is None else dtype
         self.eps = eps
         self.weight = jnp.ones(shape=dim, dtype=dtype)
 
@@ -33,7 +34,7 @@ class FeedForward(eqx.Module):
     w3: eqx.nn.Linear
 
     def __init__(self, args, key, dtype=jnp.bfloat16):
-        dtype = default_floating_dtype if dtype is None else dtype
+        dtype = default_floating_dtype() if dtype is None else dtype
         key1, key2, key3 = jax.random.split(key, 3)
 
         self.w1 = eqx.nn.Linear(
@@ -59,14 +60,13 @@ class Attention(eqx.Module):
     kv_repeats: int
     sliding_window: int
     scale: float
-    wq: eqx.nn.Linear
-    wk: eqx.nn.Linear
-    wv: eqx.nn.Linear
+    split_sizes: Tuple
+    wqkv: eqx.nn.Linear
     wo: eqx.nn.Linear
 
     def __init__(self, args, key, dtype=jnp.bfloat16):
-        dtype = default_floating_dtype if dtype is None else dtype
-        key1, key2, key3, key4 = jax.random.split(key, 4)
+        dtype = default_floating_dtype() if dtype is None else dtype
+        key1, key2 = jax.random.split(key, 2)
 
         self.n_heads = args.n_heads
         self.head_dim = args.head_dim
@@ -74,35 +74,21 @@ class Attention(eqx.Module):
         self.dim = args.dim
         self.kv_repeats = self.n_heads // self.n_kv_heads
         self.sliding_window = args.sliding_window
-
         self.scale = args.head_dim**-0.5
-
-        self.wq = eqx.nn.Linear(
-            args.dim,
+        total_head_dim = (args.n_heads + 2 * args.n_kv_heads) * args.head_dim
+        self.split_sizes = (
             args.n_heads * args.head_dim,
-            use_bias=False,
-            key=key1,
-            dtype=dtype,
+            (args.n_heads * args.head_dim) + (args.n_kv_heads * args.head_dim),
         )
-        self.wk = eqx.nn.Linear(
-            args.dim,
-            args.n_kv_heads * args.head_dim,
-            use_bias=False,
-            key=key2,
-            dtype=dtype,
-        )
-        self.wv = eqx.nn.Linear(
-            args.dim,
-            args.n_kv_heads * args.head_dim,
-            use_bias=False,
-            key=key3,
-            dtype=dtype,
+
+        self.wqkv = eqx.nn.Linear(
+            args.dim, total_head_dim, use_bias=False, key=key1, dtype=dtype
         )
         self.wo = eqx.nn.Linear(
             args.n_heads * args.head_dim,
             args.dim,
             use_bias=False,
-            key=key4,
+            key=key2,
             dtype=dtype,
         )
 
@@ -135,9 +121,8 @@ class Attention(eqx.Module):
         # x shape: [seqlen, embed_dim]
         seqlen = x.shape[0]
 
-        xq = jax.vmap(self.wq)(x)
-        xk = jax.vmap(self.wk)(x)
-        xv = jax.vmap(self.wv)(x)
+        xqkv = jax.vmap(self.wqkv)(x)
+        xq, xk, xv = jnp.split(xqkv, self.split_sizes, axis=-1)
 
         xq = jnp.reshape(xq, (seqlen, self.n_heads, self.head_dim))
         xk = jnp.reshape(xk, (seqlen, self.n_kv_heads, self.head_dim))
@@ -150,6 +135,7 @@ class Attention(eqx.Module):
             # prefill
             cache_k = cache_k.at[positions, :, :].set(xk[positions, :, :], mode="drop")
             cache_v = cache_v.at[positions, :, :].set(xv[positions, :, :], mode="drop")
+
             key = jnp.repeat(xk, self.kv_repeats, axis=1)
             value = jnp.repeat(xv, self.kv_repeats, axis=1)
             output = self.compute_scores_and_output(xq, key, value, mask, seqlen, None)
@@ -159,20 +145,18 @@ class Attention(eqx.Module):
                 positions, self.sliding_window, dtype=cache_k.dtype
             ).reshape(self.sliding_window, 1, 1)
             # the `where` update is only necessary if you are calling the cache
-            # multiple times with the same prompt. Ideally, we expect that you
-            # flush out the cache with the new prompt, and start over. What does
-            # this do? It ensures that we are not adding any values updated earlier
-            # with the new updates, meaning we are always replacing the value not
-            # updating it.For example, if prompt had a length of 6, and you want
-            # to generate 7th token, this ensures that we are not adding the old
-            # value of 7th token to the updated value as it would lead to wrong
-            # results. In case, you are flushing the cache after every prompt,
-            # remove the `jnp.where()` condition and pass the updates directly
-            # to cache_k, and cache_v respectively i.e.
-            #
-            # cache_k = cache_k + xk * one_hot_indices
-            # cache_v = cache_v + xv * one_hot_indices
-
+            #  multiple times with the same prompt. Ideally, we expect that you
+            # flush out the cache with the new prompt, and start over. What does this
+            # do? It ensures that we are not adding any values updated earlier with the
+            # new updates, meaning we are always replacing the value not updating it.
+            # For example, if prompt had a length of 6, and you want to generate 7th
+            # token, this ensures that we are not adding the old value of 7th token
+            # to the updated value as it would lead to wrong results.
+            # In case, you are flushing the cache after every prompt, remove the
+            # `jnp.where()` condition and pass the updates directly to cache_k, and
+            # cache_v respectively.
+            # i.e. cache_k = cache_k + xk * one_hot_indices
+            # and cache_v = cache_v + xv * one_hot_indices
             k_updates = cache_k + xk * one_hot_indices
             v_updates = cache_v + xv * one_hot_indices
             cache_k = jnp.where(cache_k, cache_k, k_updates)
@@ -182,12 +166,14 @@ class Attention(eqx.Module):
             causal_mask = jnp.broadcast_to(
                 jnp.arange(self.sliding_window) >= cur_pos, (1, 1, self.sliding_window)
             ).reshape(self.sliding_window, 1, 1)
+
             key = jnp.repeat(
                 jnp.where(causal_mask, 0, cache_k), axis=1, repeats=self.kv_repeats
             )
             value = jnp.repeat(
                 jnp.where(causal_mask, 0, cache_v), axis=1, repeats=self.kv_repeats
             )
+
             output = self.compute_scores_and_output(
                 xq,
                 key,
@@ -276,25 +262,21 @@ class Transformer(eqx.Module):
 
         # Partition the TransformerLayers into static and dynamic parts
         dynamic_layers, static_layers = eqx.partition(self.layers, eqx.is_array)
-        
+
         def f(_x, _dynamic_l):
             layer = eqx.combine(_dynamic_l, static_layers)
             h, cache_k, cache_v, i = _x
             h, cache_ki, cache_vi = layer(
-                h,
-                cos_freq,
-                sin_freq,
-                positions,
-                mask,
-                cache_k[i, ...],
-                cache_v[i, ...]
+                h, cos_freq, sin_freq, positions, mask, cache_k[i, ...], cache_v[i, ...]
             )
             cache_k = cache_k.at[i, :, :, :].set(cache_ki)
             cache_v = cache_v.at[i, :, :, :].set(cache_vi)
-            return (h, cache_k, cache_v, i+1), None
+            return (h, cache_k, cache_v, i + 1), None
 
         i = 0
-        (h, cache_k, cache_v, i), _ = jax.lax.scan(f, (h, cache_k, cache_v, i), dynamic_layers)
+        (h, cache_k, cache_v, i), _ = jax.lax.scan(
+            f, (h, cache_k, cache_v, i), dynamic_layers
+        )
 
         h = jax.vmap(self.norm)(h)
         h = jax.vmap(self.output)(h).astype(jnp.float32)
