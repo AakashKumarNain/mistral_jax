@@ -43,7 +43,7 @@ prefix_patt_pairs = [
     ("layers.feed_forward.w3.weight", r"layers.\d+.feed_forward.w3"),
     ("layers.ffn_norm.weight", r"layers.\d+.ffn_norm"),
 ]
-other_keys = ['tok_embeddings.weight', 'norm.weight', 'output.weight']
+other_keys = ["tok_embeddings.weight", "norm.weight", "output.weight"]
 
 # We will save the weights in a new dictionary
 new_state_dict = {}
@@ -87,4 +87,3 @@ torch.save(new_state_dict, "../model_files/merged_state_dict_mistral7B.pth")
 # Weights: layers.feed_forward.w3.weight    shape:torch.Size([32, 14336, 4096])
 # Weights: layers.ffn_norm.weight           shape:torch.Size([32, 4096])
 # Weights: layers.attention.wqkv.weight     shape:torch.Size([32, 6144, 4096])
-
