@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from functools import partial
+# from functools import partial
 
 
 def precompute_frequencies(dim, max_pos, theta=10000.0):
@@ -13,7 +13,7 @@ def precompute_frequencies(dim, max_pos, theta=10000.0):
     return jnp.cos(freqs), jnp.sin(freqs)
 
 
-@partial(jax.jit, static_argnums=(3,))
+# @partial(jax.jit, static_argnums=(3,))
 def calculate_rope(x, cos_freq, sin_freq, offset=0):
     """Generates Rotary Positional Embeddings (RoPE).
 
