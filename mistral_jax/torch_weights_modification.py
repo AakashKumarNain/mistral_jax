@@ -73,3 +73,18 @@ new_state_dict["layers.attention.wqkv.weight"] = torch.cat([wq, wk, wv], dim=1)
 
 # Save the new weights dict
 torch.save(new_state_dict, "../model_files/merged_state_dict_mistral7B.pth")
+
+
+# You should get these numbers after running this script:
+#
+# Weights: tok_embeddings.weight            shape:torch.Size([32000, 4096])
+# Weights: norm.weight                      shape:torch.Size([4096])
+# Weights: output.weight                    shape:torch.Size([32000, 4096])
+# Weights: layers.attention.wo.weight       shape:torch.Size([32, 4096, 4096])
+# Weights: layers.attention_norm.weight     shape:torch.Size([32, 4096])
+# Weights: layers.feed_forward.w1.weight    shape:torch.Size([32, 14336, 4096])
+# Weights: layers.feed_forward.w2.weight    shape:torch.Size([32, 4096, 14336])
+# Weights: layers.feed_forward.w3.weight    shape:torch.Size([32, 14336, 4096])
+# Weights: layers.ffn_norm.weight           shape:torch.Size([32, 4096])
+# Weights: layers.attention.wqkv.weight     shape:torch.Size([32, 6144, 4096])
+
