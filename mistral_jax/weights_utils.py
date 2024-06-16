@@ -16,7 +16,7 @@ import torch  # noqa: E402
 import jax  # noqa: E402
 import equinox as eqx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
-from mistral_model_optimized import Transformer  # noqa: E402
+from model import Transformer  # noqa: E402
 
 
 def port_weights_from_torch(torch_weights, eqx_model):
@@ -99,4 +99,4 @@ if __name__ == "__main__":
     model = port_weights_from_torch(state_dict, model)
 
     # 5. Serialize the Equinox model so that we can load it directly
-    eqx.tree_serialise_leaves(model_files_path / "mistral7B.eqx", model)
+    eqx.tree_serialise_leaves(model_files_path / "mistral7B_jax_port_fast.eqx", model)
