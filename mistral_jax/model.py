@@ -9,8 +9,6 @@ from typing import Tuple
 from rope import calculate_rope
 
 
-# We are not using `eqx.RMSNorm` because there is a bug
-# in the calculation. Will send a PR for that separately!
 class RMSNorm(eqx.Module):
     eps: float
     weight: Float[Array, "*shape"]  # noqa: F821
