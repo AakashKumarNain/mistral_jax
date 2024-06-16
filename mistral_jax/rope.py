@@ -13,33 +13,25 @@ def precompute_frequencies(dim, max_pos, theta=10000.0):
     return jnp.cos(freqs), jnp.sin(freqs)
 
 
-# @partial(jax.jit, static_argnums=(3,))
-def calculate_rope(x, cos_freq, sin_freq, offset=0):
+def calculate_rope(x, cos_freq, sin_freq):
     """Generates Rotary Positional Embeddings (RoPE).
 
     Args:
         x: Input tensor with shape `[seqlen, num_heads, heads_dim]`
         cos_freq: Cosine frequencies for some position/s.
         sin_freq: Sine frequencies for some position/s.
-        offset(Optional): The offset used for slicing. Defualts to 0.
-
     Returns:
         Rotary Positional Embeddings with same dtype as the input.
     """
 
     # x shape  is [seqlen, num_heads, heads_dim]
-    # Get the sequence length
-    seqlen = x.shape[0]
-
-    # Get the corresponding positional embeddings
-    sin = sin_freq[offset : offset + seqlen, :]
-    cos = cos_freq[offset : offset + seqlen, :]
+    # sin_freq, and cos_freq have the same seqlen as x
 
     # Positional embeddings are 2D while our input is 3D
     # if `num_heads` dimension is present in the inputs.
     # We need to add another dimension to our positional embeddings
-    sin = sin[:, jnp.newaxis, :]
-    cos = cos[:, jnp.newaxis, :]
+    sin = jax.lax.expand_dims(sin_freq, (1,))
+    cos = jax.lax.expand_dims(cos_freq, (1,))
 
     # Get the even-odd positions from the inputs
     x1 = x[..., 0::2]
