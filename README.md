@@ -5,12 +5,17 @@ This repository contains a port of the original [Mistral-7B model](https://githu
 Any official restriction, if applicable, that comes with the original code and the model, applies here as well. Please check the original license and the [repo](https://github.com/mistralai/mistral-src/tree/main?tab=readme-ov-file) for the details.
 
 
-# Instructions to run the model
+# Implementation details
 
-1. Clone the repo
-2. Install the required packages `pip install -r requirements.txt`
-3. Copy the mistral weights and other downloaded files to `mistral_jax/model_files/` directory
-4. Run `python -m sample_generation.py` to generate
+There are two implementations that are provided in this reop. The first implementation is in [one_file_ref.py](./mistral_jax/one_file_ref.py) file, and it is a `1:1` mapping with the original model. If you are a `PyTorch` user, and you are trying out `JAX` and `Equinox` for the first time, it is highly recommended to use this file to learn the similarities, and the differences between the two. Beware, this code is simple, and is a bit slow! You will find one notebook [model_generation_simple.ipynb](./mistral_jax/model_generation_simple.ipynb) corresponding to this code that includes both the model and the text generation code.
+
+On the other hand, if you are already familiar with JAX, it is recommended to look at the [model.py](./mistral_jax/model.py) file for the reference implementation, and [generation.py](./mistral_jax/generation.py) to use the ported model for generation. The notebook [model_generation_optimized.ipynb](./mistral_jax/model_generation_optimized.ipynb) can be used as a reference to check the results.
+
+
+# Instructions to run the code
+
+Please refer to the detailed instructions provided [here](./instructions.md) for running the code on your machine.
+Given that the original model and the corresponding port are in `bfloat16`, you will require to have at least 16G GPU memory to run this model.
 
 
 # Results
