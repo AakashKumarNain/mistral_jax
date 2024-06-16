@@ -169,8 +169,8 @@ class Attention(eqx.Module):
         xq, xk, xv = self.compute_qkv(x)
 
         # 2. Calculate RoPE
-        xq = calculate_rope(xq, cos_freq, sin_freq, 0)
-        xk = calculate_rope(xk, cos_freq, sin_freq, 0)
+        xq = calculate_rope(xq, cos_freq, sin_freq)
+        xk = calculate_rope(xk, cos_freq, sin_freq)
 
         # 3. Update cache
         cache_k, cache_v = self.update_cache_values(xk, xv, cache_k, cache_v, positions)
