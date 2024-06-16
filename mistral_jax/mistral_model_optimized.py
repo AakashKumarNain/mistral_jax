@@ -128,8 +128,8 @@ class Attention(eqx.Module):
         xk = jnp.reshape(xk, (seqlen, self.n_kv_heads, self.head_dim))
         xv = jnp.reshape(xv, (seqlen, self.n_kv_heads, self.head_dim))
 
-        xq = calculate_rope(xq, cos_freq, sin_freq, 0)
-        xk = calculate_rope(xk, cos_freq, sin_freq, 0)
+        xq = calculate_rope(xq, cos_freq, sin_freq)
+        xk = calculate_rope(xk, cos_freq, sin_freq)
 
         if positions.shape[0] > 1:
             # prefill
