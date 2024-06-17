@@ -142,23 +142,21 @@ class Attention(eqx.Module):
             one_hot_indices = jax.nn.one_hot(
                 positions, self.sliding_window, dtype=cache_k.dtype
             ).reshape(self.sliding_window, 1, 1)
-            # the `where` update is only necessary if you are calling the cache
-            #  multiple times with the same prompt. Ideally, we expect that you
-            # flush out the cache with the new prompt, and start over. What does this
-            # do? It ensures that we are not adding any values updated earlier with the
+            # Ideally, we expect that you flush out the cache with the new prompt,
+            # and start over. Why flushing out the cache values are necessary?
+            # It ensures that we are not adding any values updated earlier with the
             # new updates, meaning we are always replacing the value not updating it.
             # For example, if prompt had a length of 6, and you want to generate 7th
             # token, this ensures that we are not adding the old value of 7th token
             # to the updated value as it would lead to wrong results.
-            # In case, you are flushing the cache after every prompt, remove the
-            # `jnp.where()` condition and pass the updates directly to cache_k, and
-            # cache_v respectively.
-            # i.e. cache_k = cache_k + xk * one_hot_indices
-            # and cache_v = cache_v + xv * one_hot_indices
-            k_updates = cache_k + xk * one_hot_indices
-            v_updates = cache_v + xv * one_hot_indices
-            cache_k = jnp.where(cache_k, cache_k, k_updates)
-            cache_v = jnp.where(cache_v, cache_v, v_updates)
+            # In case, you are not flushing the cache after every prompt, add the
+            # `jnp.where()` condition as shown below:
+            # k_updates = cache_k + xk * one_hot_indices
+            # v_updates = cache_v + xv * one_hot_indices
+            # cache_k = jnp.where(cache_k, cache_k, k_updates)
+            # cache_v = jnp.where(cache_v, cache_v, v_updates)
+            cache_k = cache_k + xk * one_hot_indices
+            cache_k = cache_v + xv * one_hot_indices
 
             cur_pos = positions[-1] + 1
             causal_mask = jnp.broadcast_to(
