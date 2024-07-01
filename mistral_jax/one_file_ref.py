@@ -479,7 +479,7 @@ def main(model_files_path="../model_files/"):
 
     # 7. Define the vmapped version of the model.
     vmapped_model = eqx.filter_vmap(
-        eqx.filter_jit(model), in_axes=(0, None, None, None, None, 0, 0)
+        model, in_axes=(0, None, None, None, None, 0, 0)
     )
 
     # **NOTE:** The first call will be very slow as the model will be compiled
